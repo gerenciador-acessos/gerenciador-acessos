@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gerenciador de Acessos</title>
+  <style>
+    :root {
+      --primary: #4e54c8;
+      --secondary: #8f94fb;
+      --text: #333;
+    }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      background: white;
+      padding: 2rem;
+      border-radius: 1rem;
+      box-shadow: 0 0 20px rgba(0,0,0,0.1);
+      width: 100%;
+      max-width: 600px;
+    }
+    h1 {
+      text-align: center;
+      background: linear-gradient(to right, var(--primary), var(--secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 1.5rem;
+    }
+    label, input, button {
+      display: block;
+      width: 100%;
+      margin-top: 1rem;
+    }
+    input {
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 0.5rem;
+    }
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-top: 1.5rem;
+    }
+    button:hover {
+      background: var(--secondary);
+    }
+    .entry {
+      margin-top: 1rem;
+      padding: 1rem;
+      border: 1px solid #eee;
+      border-radius: 0.5rem;
+      background-color: #fafafa;
+      position: relative;
+    }
+    .delete, .edit {
+      position: absolute;
+      top: 10px;
+      cursor: pointer;
+    }
+    .delete {
+      right: 15px;
+      color: red;
+    }
+    .edit {
+      right: 55px;
+      color: blue;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+    .modal {
+      background: white;
+      padding: 2rem;
+      border-radius: 1rem;
+      max-width: 400px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+    }
+    .modal-actions {
+      margin-top: 1.5rem;
+      display: flex;
+      justify-content: space-around;
+    }
+    .modal-actions button {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 0.5rem;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #modal-confirmar {
+      background: var(--primary);
+      color: white;
+    }
+    #modal-cancelar {
+      background: #ccc;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Gerenciador de Acessos</h1>
+    <input type="text" id="search" placeholder="Buscar por nome...">
+    <form id="access-form">
+      <input type="text" id="nome" placeholder="Nome do cursinho" required />
+      <input type="url" id="link" placeholder="Link do site" required />
+      <input type="text" id="login" placeholder="Login" required />
+      <input type="text" id="senha" placeholder="Senha" required />
+      <button type="submit">Salvar acesso</button>
+    </form>
+    <button onclick="exportarCSV()">Exportar CSV</button>
+    <input type="file" id="import-csv" accept=".csv">
+    <button onclick="importarCSV()">Importar CSV</button>
+    <button onclick="exportarJSON()">Exportar JSON</button>
+    <input type="file" id="import-json" accept=".json">
+    <button onclick="importarJSON()">Importar JSON</button>
+    <button onclick="apagarTodos()">Apagar Todos os Acessos</button>
+    <div id="resultados"></div>
+  </div>
+
+  <!-- Modal de Confirmação -->
+  <div id="modal-confirmacao" class="modal-backdrop">
+    <div class="modal">
+      <p id="modal-msg">Tem certeza?</p>
+      <div class="modal-actions">
+        <button id="modal-confirmar">Confirmar</button>
+        <button id="modal-cancelar">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('access-form');
+    const resultados = document.getElementById('resultados');
+    const searchInput = document.getElementById('search');
+    const importInput = document.getElementById('import-csv');
+    const importJsonInput = document.getElementById('import-json');
+
+    const secret = btoa('chave-secreta');
+
+    function criptografar(texto) {
+      return btoa(texto.split('').map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ secret.charCodeAt(i % secret.length))).join(''));
+    }
+
+    function descriptografar(codigo) {
+      const base = atob(codigo);
+      return base.split('').map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ secret.charCodeAt(i % secret.length))).join('');
+    }
+
+    function salvar(acessos) {
+      localStorage.setItem('acessos', JSON.stringify(acessos));
+    }
+
+    function carregar() {
+      const data = JSON.parse(localStorage.getItem('acessos') || '[]');
+      return data.map(item => ({
+        ...item,
+        senha: descriptografar(item.senha)
+      }));
+    }
+
+    function exibir(acessos) {
+      resultados.innerHTML = '';
+      acessos.forEach((acesso, index) => {
+        const div = document.createElement('div');
+        div.className = 'entry';
+        div.innerHTML = `
+          <strong>${acesso.nome}</strong><br>
+          <a href="${acesso.link}" target="_blank">${acesso.link}</a><br>
+          <strong>Login:</strong> ${acesso.login}<br>
+          <strong>Senha:</strong> ${acesso.senha}
+          <span class="edit" onclick="editar(${index})"> Editar </span>
+          <span class="delete" onclick="remover(${index})"> Excluir </span>
+        `;
+        resultados.appendChild(div);
+      });
+    }
+
+    let modalCallback = null;
+    function mostrarModal(mensagem, callbackConfirmar) {
+      document.getElementById('modal-msg').innerText = mensagem;
+      document.getElementById('modal-confirmacao').style.display = 'flex';
+      modalCallback = callbackConfirmar;
+    }
+
+    document.getElementById('modal-confirmar').onclick = () => {
+      document.getElementById('modal-confirmacao').style.display = 'none';
+      if (modalCallback) modalCallback();
+    };
+
+    document.getElementById('modal-cancelar').onclick = () => {
+      document.getElementById('modal-confirmacao').style.display = 'none';
+      modalCallback = null;
+    };
+
+    function remover(index) {
+      mostrarModal('Deseja realmente excluir este acesso?', () => {
+        const acessos = carregar();
+        acessos.splice(index, 1);
+        salvar(acessos.map(a => ({ ...a, senha: criptografar(a.senha) })));
+        exibir(carregar());
+      });
+    }
+
+    function editar(index) {
+      mostrarModal('Deseja editar este acesso? Ele será carregado no formulário.', () => {
+        const acessos = carregar();
+        const acesso = acessos[index];
+        document.getElementById('nome').value = acesso.nome;
+        document.getElementById('link').value = acesso.link;
+        document.getElementById('login').value = acesso.login;
+        document.getElementById('senha').value = acesso.senha;
+        // Remover o item diretamente, sem pedir nova confirmação
+const acessosAtualizados = carregar();
+acessosAtualizados.splice(index, 1);
+salvar(acessosAtualizados.map(a => ({ ...a, senha: criptografar(a.senha) })));
+exibir(carregar());
+
+      });
+    }
+
+    function apagarTodos() {
+      mostrarModal('Tem certeza que deseja apagar todos os acessos?', () => {
+        localStorage.removeItem('acessos');
+        exibir([]);
+      });
+    }
+
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      const novo = {
+        nome: document.getElementById('nome').value,
+        link: document.getElementById('link').value,
+        login: document.getElementById('login').value,
+        senha: criptografar(document.getElementById('senha').value)
+      };
+      const acessos = JSON.parse(localStorage.getItem('acessos') || '[]');
+      acessos.push(novo);
+      salvar(acessos);
+      form.reset();
+      exibir(carregar());
+    });
+
+    searchInput.addEventListener('input', () => {
+      const termo = searchInput.value.toLowerCase();
+      const acessos = carregar().filter(a => a.nome.toLowerCase().includes(termo));
+      exibir(acessos);
+    });
+
+    function exportarCSV() {
+      const acessos = carregar();
+      let csv = 'Nome,Link,Login,Senha\n';
+      acessos.forEach(a => {
+        csv += `${a.nome},${a.link},${a.login},${a.senha}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'acessos.csv';
+      link.click();
+    }
+
+    function importarCSV() {
+      const file = importInput.files[0];
+      if (!file) return alert('Selecione um arquivo CSV primeiro.');
+      const reader = new FileReader();
+      reader.onload = event => {
+        const texto = event.target.result;
+        const linhas = texto.split('\n').filter(l => l.trim());
+        const cabecalho = linhas.shift();
+        const separador = cabecalho.includes(';') ? ';' : ',';
+
+        const novos = linhas.map(l => {
+          const partes = l.split(separador).map(p => p.trim());
+          if (partes.length < 4) return null;
+          const [nome, link, login, senha] = partes;
+          return { nome, link, login, senha: criptografar(senha) };
+        }).filter(Boolean);
+
+        if (novos.length === 0) {
+          alert('Nenhum dado válido encontrado no CSV. Verifique o formato.');
+          return;
+        }
+
+        const acessos = JSON.parse(localStorage.getItem('acessos') || '[]');
+        salvar([...acessos, ...novos]);
+        exibir(carregar());
+      };
+      reader.readAsText(file);
+    }
+
+    function exportarJSON() {
+      const acessos = JSON.parse(localStorage.getItem('acessos') || '[]');
+      const blob = new Blob([JSON.stringify(acessos, null, 2)], { type: 'application/json' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'acessos.json';
+      link.click();
+    }
+
+    function importarJSON() {
+      const file = importJsonInput.files[0];
+      if (!file) return alert('Selecione um arquivo JSON primeiro.');
+      const reader = new FileReader();
+      reader.onload = event => {
+        try {
+          const dados = JSON.parse(event.target.result);
+          if (!Array.isArray(dados)) throw new Error();
+          salvar(dados);
+          exibir(carregar());
+        } catch (e) {
+          alert('Erro ao importar JSON. Verifique se o arquivo está no formato correto.');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    exibir(carregar());
+  </script>
+</body>
+</html>
